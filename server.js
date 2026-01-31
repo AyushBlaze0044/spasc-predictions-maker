@@ -1,203 +1,237 @@
+// ================= SPASC PREDICTIONS MAKER =================
+// FINAL BACKEND — FULLY FROZEN LOGIC
+
 const express = require("express");
 const sqlite3 = require("sqlite3").verbose();
 const bcrypt = require("bcryptjs");
-const jwt = require("jsonwebtoken");
 const cors = require("cors");
-const bodyParser = require("body-parser");
 
 const app = express();
 app.use(cors());
-app.use(bodyParser.json());
+app.use(express.json());
 
-/* ======================
-   DATABASE
-====================== */
 const db = new sqlite3.Database("./spasc.db");
 
+// ================= DATABASE =================
 db.serialize(() => {
+
   db.run(`CREATE TABLE IF NOT EXISTS users (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     email TEXT UNIQUE,
     password TEXT,
-    wallet INTEGER DEFAULT 0,
-    total_winnings INTEGER DEFAULT 0,
-    role TEXT DEFAULT 'user'
+    wallet INTEGER DEFAULT 10000
   )`);
 
-  db.run(`CREATE TABLE IF NOT EXISTS matches (
+  db.run(`CREATE TABLE IF NOT EXISTS match (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     teamA TEXT,
     teamB TEXT,
-    status TEXT DEFAULT 'OPEN'
+    overs INTEGER,
+    tossWinner TEXT,
+    tossDecision TEXT,
+    bettingOpen INTEGER DEFAULT 0,
+    status TEXT
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS squad (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    matchId INTEGER,
+    team TEXT,
+    player TEXT
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS innings (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    matchId INTEGER,
+    inningsNo INTEGER,
+    team TEXT,
+    runs INTEGER,
+    wickets INTEGER,
+    overs REAL,
+    extras INTEGER
+  )`);
+
+  db.run(`CREATE TABLE IF NOT EXISTS player_stats (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    matchId INTEGER,
+    inningsNo INTEGER,
+    player TEXT,
+    runs INTEGER,
+    balls INTEGER,
+    overs REAL,
+    maidens INTEGER,
+    runsConceded INTEGER,
+    wickets INTEGER
   )`);
 
   db.run(`CREATE TABLE IF NOT EXISTS bets (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     userId INTEGER,
     matchId INTEGER,
+    phase TEXT,
     betType TEXT,
     selection TEXT,
-    amount INTEGER,
+    minVal INTEGER,
+    maxVal INTEGER,
+    stake INTEGER,
     odds REAL,
     result TEXT
   )`);
-
-  db.run(`CREATE TABLE IF NOT EXISTS odds (
-    matchId INTEGER,
-    betType TEXT,
-    selection TEXT,
-    odds REAL,
-    PRIMARY KEY (matchId, betType, selection)
-  )`);
-
-  db.run(`CREATE TABLE IF NOT EXISTS club (
-    id INTEGER PRIMARY KEY,
-    access_code TEXT
-  )`);
-
-  db.run(`INSERT OR IGNORE INTO club (id, access_code) VALUES (1,'SPASC123')`);
 });
 
-/* ======================
-   AUTH
-====================== */
-const SECRET = "SPASC_SECRET";
-
-app.post("/auth/register", (req, res) => {
-  const hash = bcrypt.hashSync(req.body.password, 8);
-  db.run(
-    "INSERT INTO users (email,password) VALUES (?,?)",
-    [req.body.email, hash],
-    err => {
-      if (err) return res.status(400).json({ error: "User already exists" });
-      res.json({ message: "Registered successfully" });
-    }
-  );
-});
-
+// ================= AUTH =================
 app.post("/auth/login", (req, res) => {
-  db.get(
-    "SELECT * FROM users WHERE email=?",
-    [req.body.email],
-    (err, user) => {
-      if (!user) return res.status(404).json({ error: "User not found" });
-      if (!bcrypt.compareSync(req.body.password, user.password))
-        return res.status(401).json({ error: "Wrong password" });
+  const { email, password } = req.body;
 
-      const token = jwt.sign({ id: user.id }, SECRET);
-      res.json({
-        token,
-        userId: user.id,
-        wallet: user.wallet
-      });
+  // ADMIN LOGIN (HARD LOCKED)
+  if (email === "ceospasc@gmail.com" && password === "955786@0044") {
+    return res.json({ role: "admin" });
+  }
+
+  db.get("SELECT * FROM users WHERE email=?", [email], (e, user) => {
+    if (!user || !bcrypt.compareSync(password, user.password)) {
+      return res.json({ error: "Invalid credentials" });
     }
-  );
-});
-
-app.post("/auth/club-access", (req, res) => {
-  db.get("SELECT access_code FROM club WHERE id=1", (err, row) => {
-    if (row.access_code !== req.body.code)
-      return res.status(403).json({ error: "Wrong club code" });
-    res.json({ success: true });
+    res.json({ role: "user", userId: user.id, wallet: user.wallet });
   });
 });
 
-/* ======================
-   LIVE ODDS LOGIC
-====================== */
-function updateOdds(matchId, betType) {
-  db.all(
-    "SELECT selection, SUM(amount) as total FROM bets WHERE matchId=? AND betType=? GROUP BY selection",
-    [matchId, betType],
-    (err, rows) => {
-      if (!rows || rows.length === 0) return;
-
-      const totalPool = rows.reduce((a, b) => a + b.total, 0);
-
-      rows.forEach(r => {
-        let odds = (2 * totalPool) / r.total;
-        odds = Math.min(Math.max(odds, 1.2), 5);
-        db.run(
-          "INSERT OR REPLACE INTO odds VALUES (?,?,?,?)",
-          [matchId, betType, r.selection, odds.toFixed(2)]
-        );
-      });
-    }
+// ================= MATCH =================
+app.post("/admin/create-match", (req, res) => {
+  const { teamA, teamB, overs } = req.body;
+  db.run(
+    "INSERT INTO match (teamA,teamB,overs,status) VALUES (?,?,?,?)",
+    [teamA, teamB, overs, "CREATED"]
   );
-}
+  res.json({ success: true });
+});
 
-/* ======================
-   BETTING
-====================== */
-app.post("/bet/place", (req, res) => {
-  const { userId, matchId, betType, selection, amount } = req.body;
+app.post("/admin/toss", (req, res) => {
+  const { matchId, winner, decision } = req.body;
+  db.run(
+    "UPDATE match SET tossWinner=?, tossDecision=? WHERE id=?",
+    [winner, decision, matchId]
+  );
+  res.json({ success: true });
+});
 
-  db.get("SELECT wallet FROM users WHERE id=?", [userId], (e, u) => {
-    if (!u || u.wallet < amount)
-      return res.status(400).json({ error: "Insufficient wallet balance" });
+app.post("/admin/toggle-betting", (req, res) => {
+  db.run(
+    "UPDATE match SET bettingOpen=? WHERE id=?",
+    [req.body.value, req.body.matchId]
+  );
+  res.json({ success: true });
+});
 
-    db.get(
-      "SELECT odds FROM odds WHERE matchId=? AND betType=? AND selection=?",
-      [matchId, betType, selection],
-      (e, o) => {
-        const odds = o ? o.odds : 2.0;
-
-        db.run(
-          "INSERT INTO bets (userId,matchId,betType,selection,amount,odds) VALUES (?,?,?,?,?,?)",
-          [userId, matchId, betType, selection, amount, odds]
-        );
-
-        db.run(
-          "UPDATE users SET wallet = wallet - ? WHERE id=?",
-          [amount, userId]
-        );
-
-        updateOdds(matchId, betType);
-        res.json({ message: "Bet placed", odds });
-      }
-    );
+app.get("/match/current", (req, res) => {
+  db.get("SELECT * FROM match ORDER BY id DESC LIMIT 1", [], (e, m) => {
+    res.json(m || {});
   });
 });
 
-app.get("/bet/odds/:matchId/:betType", (req, res) => {
+// ================= SQUAD =================
+app.post("/admin/add-squad", (req, res) => {
+  const { matchId, team, player } = req.body;
+  db.run(
+    "INSERT INTO squad (matchId,team,player) VALUES (?,?,?)",
+    [matchId, team, player]
+  );
+  res.json({ success: true });
+});
+
+app.get("/squad/:matchId", (req, res) => {
   db.all(
-    "SELECT selection, odds FROM odds WHERE matchId=? AND betType=?",
-    [req.params.matchId, req.params.betType],
+    "SELECT * FROM squad WHERE matchId=?",
+    [req.params.matchId],
     (e, rows) => res.json(rows)
   );
 });
 
-/* ======================
-   ADMIN
-====================== */
-app.post("/admin/allocate", (req, res) => {
-  db.run(
-    "UPDATE users SET wallet = wallet + ? WHERE id=?",
-    [req.body.amount, req.body.userId]
-  );
-  res.json({ message: "Wallet allocated" });
+// ================= BETTING =================
+function calculateOdds(type, min, max) {
+  let base = 2.0;
+  if (type === "PLAYER_OF_MATCH") base = 4.0;
+  if (max !== null) base += (max - min) / 10;
+  return parseFloat(base.toFixed(2));
+}
+
+app.post("/bet/place", (req, res) => {
+  const b = req.body;
+
+  // stake validation
+  if (b.stake < 100) return res.json({ error: "Invalid stake" });
+
+  db.get("SELECT wallet FROM users WHERE id=?", [b.userId], (e, u) => {
+    if (!u || u.wallet < b.stake)
+      return res.json({ error: "Insufficient balance" });
+
+    const odds = calculateOdds(b.betType, b.minVal, b.maxVal);
+
+    db.run(
+      `INSERT INTO bets 
+      (userId,matchId,phase,betType,selection,minVal,maxVal,stake,odds)
+      VALUES (?,?,?,?,?,?,?,?,?)`,
+      [
+        b.userId, b.matchId, b.phase,
+        b.betType, b.selection,
+        b.minVal, b.maxVal,
+        b.stake, odds
+      ]
+    );
+
+    db.run(
+      "UPDATE users SET wallet = wallet - ? WHERE id=?",
+      [b.stake, b.userId]
+    );
+
+    res.json({ success: true, odds });
+  });
 });
 
-app.post("/admin/set-odds", (req, res) => {
+// ================= INNINGS DATA =================
+app.post("/admin/innings", (req, res) => {
+  const i = req.body;
   db.run(
-    "INSERT OR REPLACE INTO odds VALUES (?,?,?,?)",
-    [req.body.matchId, req.body.betType, req.body.selection, req.body.odds]
+    `INSERT INTO innings (matchId,inningsNo,team,runs,wickets,overs,extras)
+     VALUES (?,?,?,?,?,?,?)`,
+    [i.matchId,i.inningsNo,i.team,i.runs,i.wickets,i.overs,i.extras]
   );
-  res.json({ message: "Odds overridden manually" });
+  res.json({ success: true });
 });
 
-app.post("/admin/result", (req, res) => {
-  const { matchId, winningSelection } = req.body;
+app.post("/admin/player-stats", (req, res) => {
+  const p = req.body;
+  db.run(
+    `INSERT INTO player_stats 
+    (matchId,inningsNo,player,runs,balls,overs,maidens,runsConceded,wickets)
+    VALUES (?,?,?,?,?,?,?,?,?)`,
+    [p.matchId,p.inningsNo,p.player,p.runs,p.balls,p.overs,p.maidens,p.runsConceded,p.wickets]
+  );
+  res.json({ success: true });
+});
+
+// ================= SETTLEMENT =================
+app.post("/admin/settle", (req, res) => {
+  const { matchId } = req.body;
 
   db.all("SELECT * FROM bets WHERE matchId=?", [matchId], (e, bets) => {
     bets.forEach(b => {
-      if (b.selection === winningSelection) {
-        const win = b.amount * b.odds;
-        const net = win - b.amount;
+      let win = false;
 
+      // simple settlement logic
+      if (b.betType === "MATCH_WINNER") {
+        if (b.selection === req.body.winner) win = true;
+      }
+
+      if (b.betType === "PLAYER_RUNS") {
+        if (b.actual >= b.minVal && b.actual <= b.maxVal) win = true;
+      }
+
+      if (win) {
+        const payout = b.stake * b.odds;
         db.run(
-          "UPDATE users SET wallet = wallet + ?, total_winnings = total_winnings + ? WHERE id=?",
-          [win, net, b.userId]
+          "UPDATE users SET wallet = wallet + ? WHERE id=?",
+          [payout, b.userId]
         );
         db.run("UPDATE bets SET result='WIN' WHERE id=?", [b.id]);
       } else {
@@ -206,44 +240,11 @@ app.post("/admin/result", (req, res) => {
     });
   });
 
-  res.json({ message: "Match settled successfully" });
+  db.run("UPDATE match SET status='COMPLETED' WHERE id=?", [matchId]);
+  res.json({ success: true });
 });
 
-/* ======================
-   LEADERBOARD
-====================== */
-app.get("/admin/leaderboard", (req, res) => {
-  db.all(
-    "SELECT email,wallet,total_winnings FROM users ORDER BY wallet DESC, total_winnings DESC",
-    [],
-    (e, rows) => res.json(rows)
-  );
-});
-
-/* ======================
-   PROFIT / LOSS
-====================== */
-app.get("/admin/profit-loss", (req, res) => {
-  db.all("SELECT * FROM bets", (e, bets) => {
-    let total = 0;
-    let payout = 0;
-
-    bets.forEach(b => {
-      total += b.amount;
-      if (b.result === "WIN") payout += b.amount * b.odds;
-    });
-
-    res.json({
-      totalBets: total,
-      totalPayout: payout,
-      profit: total - payout
-    });
-  });
-});
-
-/* ======================
-   START SERVER
-====================== */
+// ================= START =================
 app.listen(3000, () => {
-  console.log("🏏 SPASC Predictions Maker running at http://localhost:3000");
+  console.log("🏏 SPASC Predictions Maker backend running on port 3000");
 });
