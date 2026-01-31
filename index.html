@@ -3,121 +3,221 @@
 <head>
 <title>SPASC Predictions Maker</title>
 <meta name="viewport" content="width=device-width, initial-scale=1">
-
 <style>
-body{background:#020617;color:#e5e7eb;font-family:sans-serif;padding:20px}
-.card{background:#111827;padding:15px;border-radius:12px;margin-bottom:15px}
-button,input{width:100%;padding:8px;margin-top:5px}
+:root{
+  --bg:#020617;--card:#0f172a;--soft:#111827;--accent:#38bdf8;
+  --danger:#ef4444;--muted:#9ca3af;--white:#e5e7eb;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--white);font-family:system-ui}
+.container{max-width:1100px;margin:auto;padding:16px}
+.grid{display:grid;gap:16px}
+@media(min-width:900px){.grid-2{grid-template-columns:1fr 1fr}}
+.card{background:linear-gradient(180deg,var(--card),#0b1220);
+  border:1px solid #1f2937;border-radius:16px;padding:16px}
+h2,h3{margin:0 0 8px}
+input,select,button{
+  width:100%;padding:10px;border-radius:10px;border:1px solid #1f2937;
+  background:var(--soft);color:var(--white)
+}
+button{background:linear-gradient(180deg,#2563eb,#1d4ed8);border:none}
+button.secondary{background:#374151}
+button.danger{background:linear-gradient(180deg,#ef4444,#dc2626)}
+.row{display:flex;gap:10px}
 .hidden{display:none}
+.small{color:var(--muted);font-size:13px}
+.badge{padding:4px 10px;border-radius:999px;background:#0b1220;border:1px solid #1f2937}
+.table{width:100%;border-collapse:collapse}
+.table th,.table td{padding:8px;border-bottom:1px solid #1f2937;text-align:left}
+.footer{opacity:.7;font-size:12px;margin-top:8px}
 </style>
 </head>
-
 <body>
+<div class="container">
 
 <h2>SPASC Predictions Maker</h2>
 
 <!-- AUTH -->
-<div class="card" id="authBox">
-  <input id="email" placeholder="Email">
-  <input id="password" type="password" placeholder="Password">
-  <button onclick="login()">Login</button>
-  <button onclick="register()">Register</button>
+<div class="card" id="auth">
+  <h3>Login / Register</h3>
+  <div class="grid grid-2">
+    <input id="email" placeholder="Email">
+    <input id="password" type="password" placeholder="Password">
+  </div>
+  <div class="row" style="margin-top:8px">
+    <button onclick="login()">Login</button>
+    <button class="secondary" onclick="register()">Register</button>
+  </div>
 </div>
 
 <!-- ADMIN -->
-<div class="card hidden" id="adminBox">
-  <h3>Admin Panel</h3>
-  <input id="teamA" placeholder="Team A">
-  <input id="teamB" placeholder="Team B">
-  <input id="overs" placeholder="Overs">
-  <button onclick="createMatch()">Create Match</button>
-  <button onclick="toggleBetting(1)">Open Betting</button>
-  <button onclick="toggleBetting(0)">Close Betting</button>
-  <button onclick="logout()">Logout</button>
+<div id="admin" class="hidden grid grid-2">
+
+  <div class="card">
+    <h3>Match</h3>
+    <input id="teamA" placeholder="Team A">
+    <input id="teamB" placeholder="Team B">
+    <input id="overs" placeholder="Overs (e.g. 20)">
+    <button onclick="createMatch()">Create Match</button>
+    <div class="row">
+      <button onclick="toggleBetting(1)">Open Betting</button>
+      <button class="danger" onclick="toggleBetting(0)">Close Betting</button>
+    </div>
+  </div>
+
+  <div class="card">
+    <h3>Squads</h3>
+    <select id="sTeam"><option>Team A</option><option>Team B</option></select>
+    <input id="pName" placeholder="Player name">
+    <button onclick="addPlayer()">Add Player</button>
+    <div id="sList" class="small"></div>
+  </div>
+
+  <div class="card">
+    <h3>Toss</h3>
+    <select id="tWinner"><option>Team A</option><option>Team B</option></select>
+    <select id="tDecision"><option>Bat</option><option>Bowl</option></select>
+    <button onclick="saveToss()">Save Toss</button>
+  </div>
+
+  <div class="card">
+    <h3>Profit / Loss</h3>
+    <div id="plBox" class="badge">—</div>
+    <button class="secondary" onclick="loadPL()">Refresh</button>
+  </div>
+
+  <button class="danger" onclick="logout()">Logout</button>
 </div>
 
 <!-- USER -->
-<div class="card hidden" id="userBox">
-  <h3>User Dashboard</h3>
-  <p id="wallet"></p>
-  <button onclick="logout()">Logout</button>
+<div id="user" class="hidden grid grid-2">
+
+  <div class="card">
+    <h3>Dashboard</h3>
+    <div id="wallet" class="badge"></div>
+    <div id="mInfo" class="small"></div>
+  </div>
+
+  <div class="card">
+    <h3>Place Bet</h3>
+    <select id="betType">
+      <option value="MATCH_WINNER">Match Winner</option>
+      <option value="PLAYER_RUNS">Player Runs</option>
+      <option value="PLAYER_WICKETS">Player Wickets</option>
+      <option value="RUNS_CONCEDED">Runs Conceded</option>
+      <option value="EXTRAS">Match Extras</option>
+      <option value="PLAYER_OF_MATCH">Player of the Match</option>
+    </select>
+    <input id="selection" placeholder="Team / Player">
+    <div class="row">
+      <input id="minV" placeholder="Min">
+      <input id="maxV" placeholder="Max">
+    </div>
+    <input id="stake" placeholder="Stake (₹100, ₹200...)">
+    <button onclick="placeBet()">Place Bet</button>
+  </div>
+
+  <div class="card">
+    <h3>My Bets</h3>
+    <table class="table"><thead>
+      <tr><th>Type</th><th>Sel</th><th>Stake</th><th>Odds</th><th>Res</th></tr>
+    </thead><tbody id="bets"></tbody></table>
+  </div>
+
+  <div class="card">
+    <h3>Leaderboard</h3>
+    <table class="table"><thead>
+      <tr><th>User</th><th>Wallet</th></tr>
+    </thead><tbody id="lb"></tbody></table>
+  </div>
+
+  <button class="danger" onclick="logout()">Logout</button>
+</div>
+
+<div class="footer">Virtual INR • Private club use</div>
+
 </div>
 
 <script>
-const API = "https://spasc-predictions-maker.onrender.com";
+const API="http://localhost:3000"; // change to Render URL when online
+let sess=JSON.parse(localStorage.getItem("spasc")), match=null;
 
-/* ===== AUTO LOGIN ===== */
-const saved = JSON.parse(localStorage.getItem("spasc_user"));
-if (saved) handleLogin(saved);
+if(sess) init(sess);
 
-/* ===== REGISTER ===== */
 function register(){
- fetch(API+"/auth/register",{
-  method:"POST",
-  headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({email:email.value,password:password.value})
- })
- .then(r=>r.json())
- .then(d=>{
-  if(d.error) alert(d.error);
-  else alert("Registered! Now login.");
- });
+ fetch(API+"/auth/register",{method:"POST",headers:{'Content-Type':'application/json'},
+ body:JSON.stringify({email:email.value,password:password.value})})
+ .then(r=>r.json()).then(d=>alert(d.error||"Registered"));
 }
-
-/* ===== LOGIN ===== */
 function login(){
- fetch(API+"/auth/login",{
-  method:"POST",
-  headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({email:email.value,password:password.value})
- })
- .then(r=>r.json())
- .then(d=>{
+ fetch(API+"/auth/login",{method:"POST",headers:{'Content-Type':'application/json'},
+ body:JSON.stringify({email:email.value,password:password.value})})
+ .then(r=>r.json()).then(d=>{
   if(d.error) return alert(d.error);
-  localStorage.setItem("spasc_user",JSON.stringify(d));
-  handleLogin(d);
+  localStorage.setItem("spasc",JSON.stringify(d)); init(d);
  });
 }
-
-/* ===== HANDLE LOGIN ===== */
-function handleLogin(d){
- authBox.classList.add("hidden");
-
- if(d.role==="admin"){
-  adminBox.classList.remove("hidden");
- } else {
-  userBox.classList.remove("hidden");
-  wallet.innerText = "Wallet: ₹"+d.wallet;
- }
+function init(d){
+ document.getElementById("auth").classList.add("hidden");
+ sess=d; loadMatch();
+ if(d.role==="admin"){document.getElementById("admin").classList.remove("hidden"); loadPL();}
+ else{document.getElementById("user").classList.remove("hidden");
+  wallet.innerText="Wallet ₹"+d.wallet; loadBets(); loadLB();}
 }
+function logout(){localStorage.removeItem("spasc");location.reload();}
 
-/* ===== LOGOUT ===== */
-function logout(){
- localStorage.removeItem("spasc_user");
- location.reload();
+function loadMatch(){
+ fetch(API+"/match/current").then(r=>r.json()).then(m=>{
+  match=m; if(m.teamA) mInfo.innerText=`${m.teamA} vs ${m.teamB} • Betting ${m.bettingOpen?"OPEN":"CLOSED"}`;
+  loadSquads();
+ });
 }
-
-/* ===== ADMIN ACTIONS ===== */
 function createMatch(){
- fetch(API+"/admin/create-match",{
-  method:"POST",
-  headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({
-    teamA:teamA.value,
-    teamB:teamB.value,
-    overs:overs.value
-  })
- }).then(()=>alert("Match created"));
+ fetch(API+"/admin/create-match",{method:"POST",headers:{'Content-Type':'application/json'},
+ body:JSON.stringify({teamA:teamA.value,teamB:teamB.value,overs:overs.value})})
+ .then(()=>loadMatch());
 }
-
-function toggleBetting(val){
- fetch(API+"/admin/toggle-betting",{
-  method:"POST",
-  headers:{'Content-Type':'application/json'},
-  body:JSON.stringify({matchId:1,value:val})
- }).then(()=>alert("Betting updated"));
+function toggleBetting(v){
+ fetch(API+"/admin/toggle-betting",{method:"POST",headers:{'Content-Type':'application/json'},
+ body:JSON.stringify({matchId:match.id,value:v})}).then(loadMatch);
+}
+function addPlayer(){
+ fetch(API+"/admin/add-player",{method:"POST",headers:{'Content-Type':'application/json'},
+ body:JSON.stringify({matchId:match.id,team:sTeam.value,player:pName.value})})
+ .then(()=>{pName.value="";loadSquads();});
+}
+function loadSquads(){
+ if(!match?.id) return;
+ fetch(API+"/squads/"+match.id).then(r=>r.json())
+ .then(d=>sList.innerHTML=d.map(x=>`${x.team}: ${x.player}`).join("<br>"));
+}
+function saveToss(){
+ fetch(API+"/admin/toss",{method:"POST",headers:{'Content-Type':'application/json'},
+ body:JSON.stringify({matchId:match.id,winner:tWinner.value,decision:tDecision.value})})
+ .then(()=>alert("Toss saved"));
+}
+function placeBet(){
+ fetch(API+"/bet/place",{method:"POST",headers:{'Content-Type':'application/json'},
+ body:JSON.stringify({
+  userId:sess.userId,matchId:match.id,phase:"PRE",
+  betType:betType.value,selection:selection.value,
+  minVal:minV.value||null,maxVal:maxV.value||null,stake:+stake.value
+ })}).then(r=>r.json()).then(d=>alert(d.error||("Bet @ "+d.odds)));
+}
+function loadBets(){
+ fetch(API+"/user/bets/"+sess.userId).then(r=>r.json())
+ .then(d=>bets.innerHTML=d.map(b=>`<tr>
+  <td>${b.betType}</td><td>${b.selection}</td>
+  <td>${b.stake}</td><td>${b.odds}</td><td>${b.result||"-"}</td></tr>`).join(""));
+}
+function loadLB(){
+ fetch(API+"/leaderboard").then(r=>r.json())
+ .then(d=>lb.innerHTML=d.map(x=>`<tr><td>${x.email}</td><td>${x.wallet}</td></tr>`).join(""));
+}
+function loadPL(){
+ fetch(API+"/admin/pl").then(r=>r.json())
+ .then(p=>plBox.innerText=`Stake ₹${p.totalStake} • Payout ₹${p.totalPayout} • Profit ₹${p.profit}`);
 }
 </script>
-
 </body>
 </html>
