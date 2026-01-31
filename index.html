@@ -1,0 +1,123 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>SPASC Predictions Maker</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+
+<style>
+body{background:#020617;color:#e5e7eb;font-family:sans-serif;padding:20px}
+.card{background:#111827;padding:15px;border-radius:12px;margin-bottom:15px}
+button,input{width:100%;padding:8px;margin-top:5px}
+.hidden{display:none}
+</style>
+</head>
+
+<body>
+
+<h2>SPASC Predictions Maker</h2>
+
+<!-- AUTH -->
+<div class="card" id="authBox">
+  <input id="email" placeholder="Email">
+  <input id="password" type="password" placeholder="Password">
+  <button onclick="login()">Login</button>
+  <button onclick="register()">Register</button>
+</div>
+
+<!-- ADMIN -->
+<div class="card hidden" id="adminBox">
+  <h3>Admin Panel</h3>
+  <input id="teamA" placeholder="Team A">
+  <input id="teamB" placeholder="Team B">
+  <input id="overs" placeholder="Overs">
+  <button onclick="createMatch()">Create Match</button>
+  <button onclick="toggleBetting(1)">Open Betting</button>
+  <button onclick="toggleBetting(0)">Close Betting</button>
+  <button onclick="logout()">Logout</button>
+</div>
+
+<!-- USER -->
+<div class="card hidden" id="userBox">
+  <h3>User Dashboard</h3>
+  <p id="wallet"></p>
+  <button onclick="logout()">Logout</button>
+</div>
+
+<script>
+const API = "https://spasc-predictions-maker.onrender.com";
+
+/* ===== AUTO LOGIN ===== */
+const saved = JSON.parse(localStorage.getItem("spasc_user"));
+if (saved) handleLogin(saved);
+
+/* ===== REGISTER ===== */
+function register(){
+ fetch(API+"/auth/register",{
+  method:"POST",
+  headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({email:email.value,password:password.value})
+ })
+ .then(r=>r.json())
+ .then(d=>{
+  if(d.error) alert(d.error);
+  else alert("Registered! Now login.");
+ });
+}
+
+/* ===== LOGIN ===== */
+function login(){
+ fetch(API+"/auth/login",{
+  method:"POST",
+  headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({email:email.value,password:password.value})
+ })
+ .then(r=>r.json())
+ .then(d=>{
+  if(d.error) return alert(d.error);
+  localStorage.setItem("spasc_user",JSON.stringify(d));
+  handleLogin(d);
+ });
+}
+
+/* ===== HANDLE LOGIN ===== */
+function handleLogin(d){
+ authBox.classList.add("hidden");
+
+ if(d.role==="admin"){
+  adminBox.classList.remove("hidden");
+ } else {
+  userBox.classList.remove("hidden");
+  wallet.innerText = "Wallet: ₹"+d.wallet;
+ }
+}
+
+/* ===== LOGOUT ===== */
+function logout(){
+ localStorage.removeItem("spasc_user");
+ location.reload();
+}
+
+/* ===== ADMIN ACTIONS ===== */
+function createMatch(){
+ fetch(API+"/admin/create-match",{
+  method:"POST",
+  headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({
+    teamA:teamA.value,
+    teamB:teamB.value,
+    overs:overs.value
+  })
+ }).then(()=>alert("Match created"));
+}
+
+function toggleBetting(val){
+ fetch(API+"/admin/toggle-betting",{
+  method:"POST",
+  headers:{'Content-Type':'application/json'},
+  body:JSON.stringify({matchId:1,value:val})
+ }).then(()=>alert("Betting updated"));
+}
+</script>
+
+</body>
+</html>
